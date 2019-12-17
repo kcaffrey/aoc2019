@@ -24,7 +24,7 @@ pub fn solve_part2(input: &Intcode) -> u32 {
             test.memory[1] = noun;
             test.memory[2] = verb;
             test.execute();
-            if test.memory[0] == 19690720 {
+            if test.memory[0] == 19_690_720 {
                 return 100 * noun + verb;
             }
         }

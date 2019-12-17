@@ -1,6 +1,7 @@
 #[aoc_generator(day1)]
 pub fn input_generator(input: &str) -> Vec<u32> {
-    input.lines()
+    input
+        .lines()
         .filter_map(|s| s.parse::<u32>().ok())
         .collect()
 }
@@ -34,6 +35,6 @@ mod tests {
     pub fn test_fuel_for_mass() {
         assert_eq!(2, fuel_for_mass(14));
         assert_eq!(966, fuel_for_mass(1969));
-        assert_eq!(50346, fuel_for_mass(100756));
+        assert_eq!(50346, fuel_for_mass(100_756));
     }
 }
