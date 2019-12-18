@@ -82,7 +82,7 @@ pub fn solve_part2(input: &[Layer]) -> String {
             "{}\n",
             (0..drawing.width)
                 .map(|x| drawing.get_pixel(x, y))
-                .map(|p| if p == 0 { ' ' } else { '■' })
+                .map(|p| if p == 0 { ' ' } else { '▓' })
                 .collect::<String>()
         ));
     }
@@ -101,6 +101,6 @@ mod tests {
             Layer::from_data(2, 2, &[2, 2, 1, 2]),
             Layer::from_data(2, 2, &[0, 0, 0, 0]),
         ];
-        assert_eq!("\n ■\n■ \n", solve_part2(&layers));
+        assert_eq!("\n ▓\n▓ \n", solve_part2(&layers));
     }
 }
