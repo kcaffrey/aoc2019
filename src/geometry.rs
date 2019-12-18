@@ -2,12 +2,18 @@ use std::cmp::Ordering;
 use std::fmt::{self, Display, Formatter};
 use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 
-use num_traits::{One, Signed, Zero};
+use num::{One, Signed, Zero};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Point2D<T> {
     pub x: T,
     pub y: T,
+}
+
+macro_rules! point2D {
+    ($x:expr, $y:expr) => {
+        Point2D::with_coordinates($x, $y)
+    };
 }
 
 impl<T> Point2D<T> {
