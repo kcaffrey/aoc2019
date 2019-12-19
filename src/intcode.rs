@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 #[derive(Clone)]
 pub struct Intcode {
-    pub memory: Vec<i64>,
+    memory: Vec<i64>,
     ip: usize,
     relative_base: i64,
     state: State,
@@ -77,7 +77,7 @@ impl Intcode {
         self.state == State::Halted
     }
 
-    fn mem_access(&mut self, address: i64) -> &mut i64 {
+    pub fn mem_access(&mut self, address: i64) -> &mut i64 {
         if address < 0 {
             panic!("Oh no, address is less than 0: {}", address);
         }

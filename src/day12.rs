@@ -1,6 +1,5 @@
-use std::collections::HashSet;
-
 use lazy_static::lazy_static;
+use num::Integer;
 use regex::Regex;
 
 use crate::geometry::Point3D;
@@ -56,8 +55,11 @@ pub fn solve_part1(moons: &[Moon]) -> i32 {
 
 #[aoc(day12, part2)]
 pub fn solve_part2(moons: &[Moon]) -> usize {
-    // TODO
-    0
+    let periodx = find_period(&moons.iter().map(|m| m.position.x).collect::<Vec<_>>());
+    let periody = find_period(&moons.iter().map(|m| m.position.y).collect::<Vec<_>>());
+    let periodz = find_period(&moons.iter().map(|m| m.position.z).collect::<Vec<_>>());
+
+    periodx.lcm(&periody.lcm(&periodz))
 }
 
 fn do_step(moons: &mut [Moon]) {
@@ -76,5 +78,27 @@ fn do_step(moons: &mut [Moon]) {
     }
     for moon in moons {
         moon.position += moon.velocity;
+    }
+}
+
+fn find_period(values: &[i32]) -> usize {
+    let mut positions = values.to_owned();
+    let mut velocities = vec![0; positions.len()];
+    let mut count = 0;
+    loop {
+        for i in 0..positions.len() {
+            for j in i + 1..positions.len() {
+                let deltav = (positions[j] - positions[i]).signum();
+                velocities[i] += deltav;
+                velocities[j] -= deltav;
+            }
+        }
+        for i in 0..positions.len() {
+            positions[i] += velocities[i];
+        }
+        count += 1;
+        if &positions[..] == values && velocities == vec![0; positions.len()] {
+            return count;
+        }
     }
 }
