@@ -1,30 +1,37 @@
+use std::collections::VecDeque;
 use std::mem;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
 #[derive(Clone)]
 pub struct Intcode {
-    pub memory: Vec<i32>,
+    pub memory: Vec<i64>,
     ip: usize,
+    relative_base: i64,
     state: State,
 }
 
 pub trait Input {
-    fn get_input(&mut self) -> Option<i32>;
+    fn get_input(&mut self) -> Option<i64>;
 }
 
 pub trait Output {
-    fn receive_output(&mut self, output: i32);
+    fn receive_output(&mut self, output: i64);
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug)]
+pub struct IoBus {
+    values: VecDeque<i64>,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
 enum State {
     Running,
     WaitingForInput(Op),
     Halted,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum Opcode {
     Add,
     Multiply,
@@ -34,25 +41,27 @@ enum Opcode {
     JumpIfFalse,
     LessThan,
     Equals,
+    RelativeBaseOffset,
     Halt,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 struct Op {
     opcode: Opcode,
     parameters: Vec<Parameter>,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum ParameterMode {
     Position,
     Immediate,
+    Relative,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 struct Parameter {
     mode: ParameterMode,
-    value: i32,
+    value: i64,
 }
 
 impl Intcode {
@@ -68,8 +77,21 @@ impl Intcode {
         self.state == State::Halted
     }
 
+    fn mem_access(&mut self, address: i64) -> &mut i64 {
+        if address < 0 {
+            panic!("Oh no, address is less than 0: {}", address);
+        }
+        if address as usize >= self.memory.len() {
+            self.memory.resize(
+                std::cmp::max(address as usize + 1, self.memory.len() * 2),
+                0,
+            );
+        }
+        self.memory.get_mut(address as usize).unwrap()
+    }
+
     fn op(&mut self) -> Op {
-        let val = self.memory[self.ip] as u32;
+        let val = *self.mem_access(self.ip as i64) as u32;
         let (opcode, param_count) = match val % 100 {
             1 => (Opcode::Add, 3),
             2 => (Opcode::Multiply, 3),
@@ -79,6 +101,7 @@ impl Intcode {
             6 => (Opcode::JumpIfFalse, 2),
             7 => (Opcode::LessThan, 3),
             8 => (Opcode::Equals, 3),
+            9 => (Opcode::RelativeBaseOffset, 1),
             99 => (Opcode::Halt, 0),
             _ => panic!("invalid operation"),
         };
@@ -89,9 +112,10 @@ impl Intcode {
                 mode: match param_modes % 10 {
                     0 => ParameterMode::Position,
                     1 => ParameterMode::Immediate,
+                    2 => ParameterMode::Relative,
                     _ => panic!("invalid parameter mode"),
                 },
-                value: self.memory[self.ip + i],
+                value: *self.mem_access((self.ip + i) as i64),
             });
             param_modes /= 10;
         }
@@ -121,19 +145,19 @@ impl Intcode {
         // Execute the op
         match op.opcode {
             Opcode::Add => {
-                self.memory[op.parameters[2].value as usize] =
-                    self.load(op.parameters[0]) + self.load(op.parameters[1]);
+                let val = self.load(op.parameters[0]) + self.load(op.parameters[1]);
+                self.write(op.parameters[2], val);
             }
             Opcode::Multiply => {
-                self.memory[op.parameters[2].value as usize] =
-                    self.load(op.parameters[0]) * self.load(op.parameters[1]);
+                let val = self.load(op.parameters[0]) * self.load(op.parameters[1]);
+                self.write(op.parameters[2], val);
             }
             Opcode::Input => match input.get_input() {
                 None => {
                     self.state = State::WaitingForInput(op);
                     return false;
                 }
-                Some(input) => self.memory[op.parameters[0].value as usize] = input,
+                Some(input) => self.write(op.parameters[0], input),
             },
             Opcode::Output => output.receive_output(self.load(op.parameters[0])),
             Opcode::JumpIfTrue => {
@@ -147,49 +171,97 @@ impl Intcode {
                 }
             }
             Opcode::LessThan => {
-                self.memory[op.parameters[2].value as usize] =
-                    if self.load(op.parameters[0]) < self.load(op.parameters[1]) {
-                        1
-                    } else {
-                        0
-                    };
+                let val = if self.load(op.parameters[0]) < self.load(op.parameters[1]) {
+                    1
+                } else {
+                    0
+                };
+                self.write(op.parameters[2], val);
             }
             Opcode::Equals => {
-                self.memory[op.parameters[2].value as usize] =
-                    if self.load(op.parameters[0]) == self.load(op.parameters[1]) {
-                        1
-                    } else {
-                        0
-                    };
+                let val = if self.load(op.parameters[0]) == self.load(op.parameters[1]) {
+                    1
+                } else {
+                    0
+                };
+                self.write(op.parameters[2], val);
+            }
+            Opcode::RelativeBaseOffset => {
+                self.relative_base += self.load(op.parameters[0]);
             }
             _ => unimplemented!(),
         };
         true
     }
 
-    fn load(&self, parameter: Parameter) -> i32 {
+    fn load(&mut self, parameter: Parameter) -> i64 {
         match parameter.mode {
-            ParameterMode::Position => self.memory[parameter.value as usize],
+            ParameterMode::Position => *self.mem_access(parameter.value),
             ParameterMode::Immediate => parameter.value,
+            ParameterMode::Relative => *self.mem_access(self.relative_base + parameter.value),
+        }
+    }
+
+    fn write(&mut self, destination: Parameter, value: i64) {
+        match destination.mode {
+            ParameterMode::Position => *self.mem_access(destination.value) = value,
+            ParameterMode::Relative => {
+                *self.mem_access(self.relative_base + destination.value) = value;
+            }
+            ParameterMode::Immediate => {
+                panic!("immediate parameter mode not supported for write");
+            }
         }
     }
 }
 
 impl<T> Input for T
 where
-    T: FnMut() -> i32,
+    T: FnMut() -> i64,
 {
-    fn get_input(&mut self) -> Option<i32> {
+    fn get_input(&mut self) -> Option<i64> {
         Some(self())
     }
 }
 
 impl<T> Output for T
 where
-    T: FnMut(i32),
+    T: FnMut(i64),
 {
-    fn receive_output(&mut self, output: i32) {
+    fn receive_output(&mut self, output: i64) {
         self(output);
+    }
+}
+
+impl Default for IoBus {
+    fn default() -> Self {
+        Self {
+            values: Default::default(),
+        }
+    }
+}
+
+impl Input for IoBus {
+    fn get_input(&mut self) -> Option<i64> {
+        self.values.pop_front()
+    }
+}
+
+impl Output for IoBus {
+    fn receive_output(&mut self, output: i64) {
+        self.values.push_back(output);
+    }
+}
+
+impl Input for &mut IoBus {
+    fn get_input(&mut self) -> Option<i64> {
+        (*self).values.pop_front()
+    }
+}
+
+impl Output for &mut IoBus {
+    fn receive_output(&mut self, output: i64) {
+        (*self).values.push_back(output);
     }
 }
 
@@ -197,10 +269,11 @@ impl FromStr for Intcode {
     type Err = ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let code: Result<Vec<i32>, ParseIntError> = s.split(',').map(str::parse).collect();
+        let code: Result<Vec<i64>, ParseIntError> = s.split(',').map(str::parse).collect();
         Ok(Self {
             memory: code?,
             ip: 0,
+            relative_base: 0,
             state: State::Running,
         })
     }
@@ -215,6 +288,7 @@ mod tests {
         let mut program = Intcode {
             memory: vec![1, 9, 10, 3, 2, 3, 11, 0, 99, 30, 40, 50],
             ip: 0,
+            relative_base: 0,
             state: State::Running,
         };
 

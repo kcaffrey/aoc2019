@@ -8,7 +8,7 @@ pub fn input_generator(input: &str) -> Result<Intcode, ParseIntError> {
 }
 
 #[aoc(day2, part1)]
-pub fn solve_part1(input: &Intcode) -> i32 {
+pub fn solve_part1(input: &Intcode) -> i64 {
     let mut input = input.clone();
     input.memory[1] = 12;
     input.memory[2] = 2;
@@ -17,7 +17,7 @@ pub fn solve_part1(input: &Intcode) -> i32 {
 }
 
 #[aoc(day2, part2)]
-pub fn solve_part2(input: &Intcode) -> i32 {
+pub fn solve_part2(input: &Intcode) -> i64 {
     for noun in 0..=99 {
         for verb in 0..=99 {
             let mut test = input.clone();
