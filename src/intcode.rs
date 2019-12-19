@@ -1,3 +1,4 @@
+use std::mem;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
@@ -5,6 +6,22 @@ use std::str::FromStr;
 pub struct Intcode {
     pub memory: Vec<i32>,
     ip: usize,
+    state: State,
+}
+
+pub trait Input {
+    fn get_input(&mut self) -> Option<i32>;
+}
+
+pub trait Output {
+    fn receive_output(&mut self, output: i32);
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum State {
+    Running,
+    WaitingForInput(Op),
+    Halted,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -20,18 +37,19 @@ enum Opcode {
     Halt,
 }
 
+#[derive(Clone, PartialEq, Eq)]
 struct Op {
     opcode: Opcode,
     parameters: Vec<Parameter>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 enum ParameterMode {
     Position,
     Immediate,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 struct Parameter {
     mode: ParameterMode,
     value: i32,
@@ -42,12 +60,12 @@ impl Intcode {
         self.execute_with_io(|| 0, |_| {});
     }
 
-    pub fn execute_with_io<I, O>(&mut self, mut input: I, mut output: O)
-    where
-        I: FnMut() -> i32,
-        O: FnMut(i32),
-    {
-        while self.step(|| input(), |v| output(v)) {}
+    pub fn execute_with_io<I: Input, O: Output>(&mut self, mut input: I, mut output: O) {
+        while self.step(&mut input, &mut output) {}
+    }
+
+    pub fn is_halted(&self) -> bool {
+        self.state == State::Halted
     }
 
     fn op(&mut self) -> Op {
@@ -81,15 +99,26 @@ impl Intcode {
         Op { opcode, parameters }
     }
 
-    fn step<I, O>(&mut self, mut input: I, mut output: O) -> bool
-    where
-        I: FnMut() -> i32,
-        O: FnMut(i32),
-    {
-        let op = self.op();
-        if op.opcode == Opcode::Halt {
+    fn step<I: Input, O: Output>(&mut self, input: &mut I, output: &mut O) -> bool {
+        if self.state == State::Halted {
             return false;
         }
+
+        // If we saved an operation while waiting for input, use that, otherwise read a new op
+        let op =
+            if let State::WaitingForInput(lastop) = mem::replace(&mut self.state, State::Running) {
+                lastop
+            } else {
+                self.op()
+            };
+
+        // Check for halt
+        if op.opcode == Opcode::Halt {
+            self.state = State::Halted;
+            return false;
+        }
+
+        // Execute the op
         match op.opcode {
             Opcode::Add => {
                 self.memory[op.parameters[2].value as usize] =
@@ -99,8 +128,14 @@ impl Intcode {
                 self.memory[op.parameters[2].value as usize] =
                     self.load(op.parameters[0]) * self.load(op.parameters[1]);
             }
-            Opcode::Input => self.memory[op.parameters[0].value as usize] = input(),
-            Opcode::Output => output(self.load(op.parameters[0])),
+            Opcode::Input => match input.get_input() {
+                None => {
+                    self.state = State::WaitingForInput(op);
+                    return false;
+                }
+                Some(input) => self.memory[op.parameters[0].value as usize] = input,
+            },
+            Opcode::Output => output.receive_output(self.load(op.parameters[0])),
             Opcode::JumpIfTrue => {
                 if self.load(op.parameters[0]) != 0 {
                     self.ip = self.load(op.parameters[1]) as usize;
@@ -140,6 +175,24 @@ impl Intcode {
     }
 }
 
+impl<T> Input for T
+where
+    T: FnMut() -> i32,
+{
+    fn get_input(&mut self) -> Option<i32> {
+        Some(self())
+    }
+}
+
+impl<T> Output for T
+where
+    T: FnMut(i32),
+{
+    fn receive_output(&mut self, output: i32) {
+        self(output);
+    }
+}
+
 impl FromStr for Intcode {
     type Err = ParseIntError;
 
@@ -148,6 +201,7 @@ impl FromStr for Intcode {
         Ok(Self {
             memory: code?,
             ip: 0,
+            state: State::Running,
         })
     }
 }
@@ -161,16 +215,17 @@ mod tests {
         let mut program = Intcode {
             memory: vec![1, 9, 10, 3, 2, 3, 11, 0, 99, 30, 40, 50],
             ip: 0,
+            state: State::Running,
         };
 
-        program.step(|| 0, |_| {});
+        program.step(&mut || 0, &mut |_| {});
         assert_eq!(
             vec![1, 9, 10, 70, 2, 3, 11, 0, 99, 30, 40, 50],
             program.memory
         );
         assert_eq!(4, program.ip);
 
-        program.step(|| 0, |_| {});
+        program.step(&mut || 0, &mut |_| {});
         assert_eq!(
             vec![3500, 9, 10, 70, 2, 3, 11, 0, 99, 30, 40, 50],
             program.memory
