@@ -233,6 +233,16 @@ where
     }
 }
 
+impl IoBus {
+    pub fn read(&mut self) -> Option<i64> {
+        self.values.pop_front()
+    }
+
+    pub fn write(&mut self, value: i64) {
+        self.values.push_back(value);
+    }
+}
+
 impl Default for IoBus {
     fn default() -> Self {
         Self {
@@ -243,25 +253,25 @@ impl Default for IoBus {
 
 impl Input for IoBus {
     fn get_input(&mut self) -> Option<i64> {
-        self.values.pop_front()
+        self.read()
     }
 }
 
 impl Output for IoBus {
     fn receive_output(&mut self, output: i64) {
-        self.values.push_back(output);
+        self.write(output);
     }
 }
 
 impl Input for &mut IoBus {
     fn get_input(&mut self) -> Option<i64> {
-        (*self).values.pop_front()
+        self.read()
     }
 }
 
 impl Output for &mut IoBus {
     fn receive_output(&mut self, output: i64) {
-        (*self).values.push_back(output);
+        self.write(output);
     }
 }
 
