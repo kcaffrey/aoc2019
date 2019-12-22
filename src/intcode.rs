@@ -241,6 +241,24 @@ impl IoBus {
     pub fn write(&mut self, value: i64) {
         self.values.push_back(value);
     }
+
+    pub fn read_str(&mut self) -> String {
+        let mut s = String::new();
+        while let Some(c) = self.read() {
+            if c > 255 {
+                self.values.push_front(c);
+                break;
+            }
+            s.push(c as u8 as char);
+        }
+        s
+    }
+
+    pub fn write_str(&mut self, s: &str) {
+        s.chars()
+            .map(|ch| ch as u8 as i64)
+            .for_each(|ch| self.write(ch));
+    }
 }
 
 impl Default for IoBus {

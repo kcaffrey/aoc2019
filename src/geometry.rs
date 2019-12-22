@@ -41,6 +41,12 @@ impl<T: Zero> Point2D<T> {
     }
 }
 
+impl<T: Zero> Default for Point2D<T> {
+    fn default() -> Self {
+        Self::origin()
+    }
+}
+
 impl<T: One + Zero> Point2D<T> {
     pub fn x_basis() -> Self {
         Self {
@@ -143,6 +149,12 @@ impl<T> Point3D<T> {
 impl<T: Zero> Point3D<T> {
     pub fn origin() -> Self {
         Self::with_coordinates(T::zero(), T::zero(), T::zero())
+    }
+}
+
+impl<T: Zero> Default for Point3D<T> {
+    fn default() -> Self {
+        Self::origin()
     }
 }
 
